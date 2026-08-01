@@ -722,12 +722,25 @@
     <button onclick="showPage('adminPage')">⬅ Back</button>
     <h2>Ads (Google AdSense) Settings</h2>
     <div class="whitePage">
-      <p>Paste your Google AdSense embed link / ad unit URL below. This link is what plays when a user watches an ad to earn a key. Leave it empty to show "No ads available".</p>
-      <input type="text" id="adSenseLinkInput" placeholder="https://... AdSense ad link">
-      <button onclick="saveAdSenseLink()">Save Ad Link</button>
-      <button onclick="clearAdSenseLink()">Clear</button>
+      <p>Fill these in once your Google AdSense / Ad Manager application is approved. Leave empty and the app runs ad-free with a "Ads not configured yet" placeholder — nothing breaks while you wait for approval.</p>
+
+<p style="font-weight:600;margin:10px 0 2px;">Google AdSense Publisher ID</p>
+<p style="font-size:13px;color:var(--muted);margin:0 0 4px;">Format: ca-pub-XXXXXXXXXXXXXXXX — found in AdSense → Account → Settings → Account information.</p>
+<input type="text" id="adsensePublisherIdInput" placeholder="ca-pub-XXXXXXXXXXXXXXXX">
+
+<p style="font-weight:600;margin:10px 0 2px;">Interstitial Ad Slot ID</p>
+<p style="font-size:13px;color:var(--muted);margin:0 0 4px;">The ad shown right before a book opens. Create this ad unit in AdSense → Ads → By ad unit → Display ads.</p>
+<input type="text" id="interstitialSlotIdInput" placeholder="e.g. 1234567890">
+
+<p style="font-weight:600;margin:10px 0 2px;">Rewarded Ad Unit ID (Google Ad Manager)</p>
+<p style="font-size:13px;color:var(--muted);margin:0 0 4px;">Powers "watch ad → earn 1 key". Requires a Google Ad Manager account with a Rewarded ad unit created — separate from basic AdSense.</p>
+<input type="text" id="rewardedAdUnitIdInput" placeholder="e.g. /1234567/rewarded_ad_unit">
+
+<button onclick="saveAdSettings()">Save Ad Settings</button>
+<button onclick="clearAdSettings()">Clear</button>
       <div id="adSenseStatus" style="margin-top:10px;"></div>
     </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:14px;">Note: the secret Server-Side Verification key Google gives you for Rewarded Ads is NOT entered here — it must be stored only in the backend (Cloud Functions config), never in a field visible to the browser, or it could be read by anyone.</p>
   </section>
 
   <!-- ---------- ADMIN: AI MODE SETTINGS ---------- -->
@@ -735,9 +748,8 @@
     <button onclick="showPage('adminPage')">⬅ Back</button>
     <h2>AI Mode Settings</h2>
     <div class="whitePage">
-      <p>Connect the AI Tutor (AI Mode) to any AI provider you choose (e.g. Claude, GPT, Gemini) by entering its API endpoint and key. Until this is set, AI Mode replies with a placeholder message.</p>
-      <input type="text" id="aiEndpointInput" placeholder="AI API endpoint URL">
-      <input type="text" id="aiKeyInput" placeholder="AI API key">
+      <p>Paste the URL of your AI proxy (e.g. your Cloudflare Worker). The real AI provider key stays hidden on the proxy itself — it is never entered here or stored in this app, so it can never be exposed to users.</p>
+<input type="text" id="aiEndpointInput" placeholder="e.g. https://your-worker.workers.dev" value="https://red-queen-b6f5.kuzwashamiromeo2010.workers.dev">
       <button onclick="saveAiSettings()">Save AI Settings</button>
       <button onclick="clearAiSettings()">Clear</button>
       <div id="aiSettingsStatus" style="margin-top:10px;"></div>
@@ -1359,16 +1371,16 @@ window.playAd = function(grantKey, onComplete){
   const progress = document.getElementById("adProgress");
   const stopBtn = document.getElementById("adStopBtn");
   const autoplayBtn = document.getElementById("adAutoplayBtn");
-  const link = localStorage.getItem("adSenseLink");
+  const rewardedAdUnitId = localStorage.getItem("rewardedAdUnitId");
 
   modal.classList.add("show");
   stopBtn.style.display = window._adAutoplay ? "inline-block" : "none";
   autoplayBtn.style.display = "inline-block";
 
-  if(!link){
-    content.innerHTML = '<p style="padding:20px;">No ads available</p>';
-    progress.value = 0;
-    statusText.textContent = "No ads available";
+  if(!rewardedAdUnitId){
+  content.innerHTML = '<p style="padding:20px;">Ads not configured yet — admin needs to add a Rewarded Ad Unit ID (Admin Dashboard → Ads Settings) once Google Ad Manager is approved.</p>';
+  progress.value = 0;
+  statusText.textContent = "Ads not configured";
     setTimeout(()=>{
       if(!window._adAutoplay) closeAdModal();
       if(onComplete) onComplete();
@@ -1377,10 +1389,19 @@ window.playAd = function(grantKey, onComplete){
     return;
   }
 
-  content.innerHTML = '<iframe src="'+link+'" allow="autoplay"></iframe>';
+  /* =====================================================================
+   PLACEHOLDER — replace this block with the real Google Ad Manager
+   Rewarded Ads web SDK call once the account is approved. The SDK loads
+   the ad using `rewardedAdUnitId`, and only fires its own "reward
+   earned" callback after Google confirms the ad was genuinely watched
+   end-to-end (ideally cross-checked server-side via Server-Side
+   Verification). Do NOT grant a key on a client-side timer alone in
+   production — this simulated timer is for UI testing only.
+===================================================================== */
+content.innerHTML = '<p style="padding:20px;">[TEST MODE] Simulated ad for unit: '+rewardedAdUnitId+'</p>';
   let pct = 0;
   progress.value = 0;
-  statusText.textContent = "Playing ad...";
+  statusText.textContent = "Playing ad (test mode)...";
   clearInterval(window._adProgressInterval);
   window._adProgressInterval = setInterval(()=>{
     pct += 100/8; /* ~8 second simulated ad */
@@ -1426,37 +1447,77 @@ function closeAdModal(){
   document.getElementById("adContent").innerHTML = "";
 }
 
-/* ================= ADMIN: ADSENSE SETTINGS ================= */
-window.saveAdSenseLink = function(){
-  const val = document.getElementById("adSenseLinkInput").value.trim();
-  if(!val){ notify("Enter a link first"); return; }
-  localStorage.setItem("adSenseLink", val);
-  document.getElementById("adSenseStatus").textContent = "Ad link saved.";
-  notify("AdSense link saved");
+/* ================= ADMIN: ADSENSE / AD MANAGER SETTINGS ================= */
+window.saveAdSettings = async function(){
+  const pub = document.getElementById("adsensePublisherIdInput").value.trim();
+  const interstitial = document.getElementById("interstitialSlotIdInput").value.trim();
+  const rewarded = document.getElementById("rewardedAdUnitIdInput").value.trim();
+  const statusEl = document.getElementById("adSenseStatus");
+  const fields = {};
+  if(pub){ localStorage.setItem("adsensePublisherId", pub); fields.adsensePublisherId = pub; }
+  if(interstitial){ localStorage.setItem("interstitialSlotId", interstitial); fields.interstitialSlotId = interstitial; }
+  if(rewarded){ localStorage.setItem("rewardedAdUnitId", rewarded); fields.rewardedAdUnitId = rewarded; }
+  if(!Object.keys(fields).length){ notify("Enter at least one ID first"); return; }
+  statusEl.textContent = "Saving...";
+  try{
+    await saveGlobalConfig(fields);
+    statusEl.textContent = "Ad settings saved — live for all users.";
+    notify("Ad settings saved globally");
+  }catch(e){
+    console.warn(e);
+    statusEl.textContent = "Saved on this device only — Firestore write failed (check connection/admin rules).";
+    notify("Saved locally only (Firestore error)");
+  }
 };
-window.clearAdSenseLink = function(){
-  localStorage.removeItem("adSenseLink");
-  document.getElementById("adSenseLinkInput").value = "";
-  document.getElementById("adSenseStatus").textContent = "Ad link cleared — users will see \"No ads available\".";
-  notify("AdSense link cleared");
+window.clearAdSettings = async function(){
+  ["adsensePublisherId","interstitialSlotId","rewardedAdUnitId"].forEach(k=>localStorage.removeItem(k));
+  document.getElementById("adsensePublisherIdInput").value = "";
+  document.getElementById("interstitialSlotIdInput").value = "";
+  document.getElementById("rewardedAdUnitIdInput").value = "";
+  const statusEl = document.getElementById("adSenseStatus");
+  statusEl.textContent = "Clearing...";
+  try{
+    await saveGlobalConfig({ adsensePublisherId:"", interstitialSlotId:"", rewardedAdUnitId:"" });
+    statusEl.textContent = "Ad settings cleared for all users — app runs ad-free.";
+    notify("Ad settings cleared globally");
+  }catch(e){
+    console.warn(e);
+    statusEl.textContent = "Cleared on this device only — Firestore write failed.";
+    notify("Cleared locally only (Firestore error)");
+  }
 };
 
 /* ================= ADMIN: AI SETTINGS ================= */
-window.saveAiSettings = function(){
+window.saveAiSettings = async function(){
   const ep = document.getElementById("aiEndpointInput").value.trim();
-  const key = document.getElementById("aiKeyInput").value.trim();
-  if(ep) localStorage.setItem("aiEndpoint", ep);
-  if(key) localStorage.setItem("aiKey", key);
-  document.getElementById("aiSettingsStatus").textContent = "AI settings saved.";
-  notify("AI settings saved");
+  const statusEl = document.getElementById("aiSettingsStatus");
+  if(!ep){ notify("Enter your AI proxy URL first"); return; }
+  localStorage.setItem("aiEndpoint", ep);
+  statusEl.textContent = "Saving...";
+  try{
+    await saveGlobalConfig({ aiEndpoint: ep });
+    statusEl.textContent = "AI endpoint saved — now live for all users.";
+    notify("AI settings saved globally");
+  }catch(e){
+    console.warn(e);
+    statusEl.textContent = "Saved on this device only — Firestore write failed (check connection/admin rules).";
+    notify("Saved locally only (Firestore error)");
+  }
 };
-window.clearAiSettings = function(){
+window.clearAiSettings = async function(){
   localStorage.removeItem("aiEndpoint");
-  localStorage.removeItem("aiKey");
   document.getElementById("aiEndpointInput").value = "";
-  document.getElementById("aiKeyInput").value = "";
-  document.getElementById("aiSettingsStatus").textContent = "AI settings cleared.";
-  notify("AI settings cleared");
+  const statusEl = document.getElementById("aiSettingsStatus");
+  statusEl.textContent = "Clearing...";
+  try{
+    await saveGlobalConfig({ aiEndpoint: "" });
+    statusEl.textContent = "AI endpoint cleared for all users.";
+    notify("AI settings cleared globally");
+  }catch(e){
+    console.warn(e);
+    statusEl.textContent = "Cleared on this device only — Firestore write failed.";
+    notify("Cleared locally only (Firestore error)");
+  }
 };
 
 /* ================= ADMIN: EXAM YEARS SETTINGS ================= */
@@ -1871,14 +1932,72 @@ window.askAI = async function(){
   saveActivity("Asked AI: " + q);
 
   const endpoint = localStorage.getItem("aiEndpoint");
-  const key = localStorage.getItem("aiKey");
 
   if(!endpoint){
     const provider = localStorage.getItem("aiProvider") || "the selected AI";
-    area.innerHTML += "<p><b>AI Tutor:</b> " + provider + " isn't connected yet. The admin can add an AI provider from Admin Dashboard → AI Mode Settings.</p>";
+    area.innerHTML += "<p><b>AI Tutor:</b> " + provider + " isn't connected yet. The admin can add an AI endpoint from Admin Dashboard → AI Mode Settings.</p>";
     area.scrollTop = area.scrollHeight;
     return;
   }
+
+  const replyEl = document.createElement("p");
+  replyEl.innerHTML = "<b>AI Tutor:</b> ";
+  const textSpan = document.createElement("span");
+  replyEl.appendChild(textSpan);
+  area.appendChild(replyEl);
+  area.scrollTop = area.scrollHeight;
+
+  try{
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q, history: [] })
+    });
+
+    if(!res.ok || !res.body){
+      textSpan.textContent = "Could not reach the AI provider. Check the endpoint in Admin Dashboard → AI Mode Settings.";
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+
+    while(true){
+      const { done, value } = await reader.read();
+      if(done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();
+
+      for(const evt of events){
+        const line = evt.trim();
+        if(!line.startsWith("data:")) continue;
+        const jsonStr = line.slice(5).trim();
+        if(!jsonStr) continue;
+        try{
+          const parsed = JSON.parse(jsonStr);
+          const parts = parsed?.candidates?.[0]?.content?.parts || [];
+          for(const part of parts){
+            if(part.text){
+              fullText += part.text;
+              textSpan.textContent = fullText;
+              area.scrollTop = area.scrollHeight;
+            }
+          }
+        }catch(e){ /* ignore incomplete/partial JSON chunks */ }
+      }
+    }
+
+    if(!fullText){
+      textSpan.textContent = "No response received — please try again.";
+    }
+  }catch(e){
+    textSpan.textContent = "Could not reach the AI provider. Check the endpoint in Admin Dashboard → AI Mode Settings.";
+  }
+  area.scrollTop = area.scrollHeight;
+};
 
   area.innerHTML += "<p><b>AI Tutor:</b> <i>thinking...</i></p>";
   area.scrollTop = area.scrollHeight;
@@ -2186,6 +2305,7 @@ window.resetPlatform = function(){
 
 /* ================= PLATFORM INIT (runs once after login) ================= */
 function initializePlatform(){
+  loadGlobalConfig();
   loadLeaderboard();
   loadBooks();
   loadVideos();
@@ -2194,7 +2314,33 @@ function initializePlatform(){
   loadAnnouncements();
   trackPresence();
 }
+/* =================================================================
+   GLOBAL CONFIG — settings/appConfig in Firestore.
+   Holds: adsensePublisherId, interstitialSlotId, rewardedAdUnitId,
+   aiEndpoint, examYearStart. Every user reads this on load;
+   only the admin (per Firestore rules) can write to it.
+================================================================= */
+window.loadGlobalConfig = async function(){
+  if(!window.firebaseEnabled) return;
+  try{
+    const snap = await getDoc(doc(db,"settings","appConfig"));
+    if(!snap.exists()) return;
+    const data = snap.data();
+    ["adsensePublisherId","interstitialSlotId","rewardedAdUnitId","aiEndpoint"].forEach((field)=>{
+      if(data[field]) localStorage.setItem(field, data[field]);
+      else localStorage.removeItem(field);
+    });
+    if(data.examYearStart) localStorage.setItem("examYearStart", data.examYearStart);
+  }catch(e){
+    console.warn("Could not load global config from Firestore — using cached local values.", e);
+  }
+};
 
+async function saveGlobalConfig(fields){
+  if(!window.firebaseEnabled) throw new Error("Firebase not connected");
+  await setDoc(doc(db,"settings","appConfig"), fields, { merge:true });
+  }
+  
 /* ================= CALCULATOR ================= */
 (function buildCalculator(){
   const keys = ["7","8","9","/","4","5","6","*","1","2","3","-","0",".","=","+","C"];
