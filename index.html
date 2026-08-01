@@ -1998,24 +1998,7 @@ window.askAI = async function(){
   }
   area.scrollTop = area.scrollHeight;
 };
-
-  area.innerHTML += "<p><b>AI Tutor:</b> <i>thinking...</i></p>";
-  area.scrollTop = area.scrollHeight;
-  try{
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(key ? {"Authorization": "Bearer " + key} : {}) },
-      body: JSON.stringify({ question: q })
-    });
-    const data = await res.json();
-    const answer = data.answer || data.reply || data.text || JSON.stringify(data);
-    area.innerHTML += "<p><b>AI Tutor:</b> " + answer + "</p>";
-  }catch(e){
-    area.innerHTML += "<p><b>AI Tutor:</b> Could not reach the AI provider. Check the endpoint in Admin Dashboard → AI Mode Settings.</p>";
-  }
-  area.scrollTop = area.scrollHeight;
-};
-
+  
 /* ================= DAILY REWARD ================= */
 window.claimReward = function(){
   const today = new Date().toDateString();
