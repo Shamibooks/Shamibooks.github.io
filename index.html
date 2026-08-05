@@ -986,12 +986,11 @@ function withTimeout(promise, ms){
 async function loadFirebaseSdk(){
   const FIREBASE_LOAD_TIMEOUT_MS = 8000;
   try{
-    const [appMod, authMod, fsMod, storageMod] = await withTimeout(
+    const [appMod, authMod, fsMod] = await withTimeout(
       Promise.all([
         import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
         import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
         import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
-        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js"),
       ]),
       FIREBASE_LOAD_TIMEOUT_MS
     );
@@ -1001,14 +1000,21 @@ async function loadFirebaseSdk(){
        signInWithEmailAndPassword, signOut, sendPasswordResetEmail } = authMod);
     ({ getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc,
        deleteDoc, query, where, orderBy, limit, increment, serverTimestamp, onSnapshot } = fsMod);
-    ({ getStorage, ref, uploadBytes, getDownloadURL } = storageMod);
 
     initFirebaseApp();
   }catch(err){
     console.warn("Firebase SDK could not be loaded in time — continuing in offline/local mode.", err);
     window.firebaseEnabled = false;
   }
+}
+
+async function loadStorageSdk(){
+  if(storage) return; // already loaded
+  const storageMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js");
+  ({ getStorage, ref, uploadBytes, getDownloadURL } = storageMod);
+  storage = getStorage();
   }
+
 /* =========================================================
    FIREBASE CONFIG
    Replace with your own project keys. Until you do, the
@@ -1034,7 +1040,6 @@ function initFirebaseApp(){
       const app = initializeApp(firebaseConfig);
       auth = getAuth(app);
       db = getFirestore(app);
-      storage = getStorage(app);
       provider = new GoogleAuthProvider();
       window.firebaseEnabled = true;
     } else {
@@ -2200,6 +2205,7 @@ window.uploadMaterial = async function(){
 
   if(window.firebaseEnabled && file){
     try{
+      await loadStorageSdk();
       const storageRef = ref(storage, "uploads/" + file.name);
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
@@ -2529,6 +2535,15 @@ window.addEventListener("DOMContentLoaded", ()=>{
     }
   }, 1000);
 });
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch((err) => {
+        console.warn("Service worker registration failed:", err);
+      });
+    });
+  }
 </script>
 
 </body>
