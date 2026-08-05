@@ -1062,6 +1062,7 @@ window._pageHistory = [];
 
 window.showPage = function(id, fromBack){
   if(id === "adminPage"){ window._adminBrowseMode = false; }
+  if(id === "messagesPage"){ loadChatRealtime(); }
   const current = document.querySelector(".page.active, .subject.active");
   if(!fromBack && current && current.id !== id){
     window._pageHistory.push(current.id);
