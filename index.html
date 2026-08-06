@@ -975,7 +975,8 @@ let initializeApp, getAuth, GoogleAuthProvider, signInWithPopup,
     getDoc, doc, setDoc, updateDoc, deleteDoc, query, where, orderBy,
     limit, increment, serverTimestamp, onSnapshot, getStorage, ref,
     uploadBytes, getDownloadURL;
-
+let initializeAppCheck, ReCaptchaV3Provider;
+  
 function withTimeout(promise, ms){
   return Promise.race([
     promise,
@@ -986,16 +987,18 @@ function withTimeout(promise, ms){
 async function loadFirebaseSdk(){
   const FIREBASE_LOAD_TIMEOUT_MS = 8000;
   try{
-    const [appMod, authMod, fsMod] = await withTimeout(
+    const [appMod, authMod, fsMod, appCheckMod] = await withTimeout(
       Promise.all([
         import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
         import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js"),
         import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"),
+        import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js"),
       ]),
       FIREBASE_LOAD_TIMEOUT_MS
     );
 
     ({ initializeApp } = appMod);
+    ({ initializeAppCheck, ReCaptchaV3Provider } = appCheckMod);
     ({ getAuth, GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword,
        signInWithEmailAndPassword, signOut, sendPasswordResetEmail } = authMod);
     ({ getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc,
@@ -1038,6 +1041,10 @@ function initFirebaseApp(){
   try{
     if(firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY"){
       const app = initializeApp(firebaseConfig);
+      initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider("6LdM63gtAAAAAG0jKat_rwnnTmpo9ftckvhRqfq4"),
+        isTokenAutoRefreshEnabled: true
+      });
       auth = getAuth(app);
       db = getFirestore(app);
       provider = new GoogleAuthProvider();
