@@ -241,7 +241,17 @@
 </style>
 </head>
 <body>
-
+<script>
+  window.addEventListener("error", function(e){
+    document.body.style.background = "#000";
+    document.body.innerHTML = "<pre style='color:#fff;padding:20px;white-space:pre-wrap;font-size:14px;'>JS ERROR:\n" + e.message + "\nFile: " + e.filename + "\nLine: " + e.lineno + "</pre>";
+  });
+  window.addEventListener("unhandledrejection", function(e){
+    document.body.style.background = "#000";
+    document.body.innerHTML += "<pre style='color:orange;padding:20px;white-space:pre-wrap;font-size:14px;'>PROMISE ERROR:\n" + (e.reason && e.reason.message ? e.reason.message : e.reason) + "</pre>";
+  });
+</script>
+  
 <!-- ========================= LOADING ========================= -->
 <div id="loadingPage">
   <h1>WELCOME</h1>
